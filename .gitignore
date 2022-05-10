@@ -1,3 +1,5 @@
+# C++ objects and libs
+
 # Prerequisites
 *.d
 
@@ -13,8 +15,9 @@
 
 # Compiled Dynamic libraries
 *.so
-*.dylib
+*.so.*
 *.dll
+*.dylib
 
 # Fortran module files
 *.mod
@@ -30,3 +33,36 @@
 *.exe
 *.out
 *.app
+
+# Build results
+[Bb]uild*/
+[Dd]ebug*/
+[Rr]elease*/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+[Bb]ld*/
+[Bb]in*/
+[Oo]bj*/
+[Ll]og*/
+
+# Shell
+*.sh
+
+# Visual Studio
+.vs/
+
+# VS Code
+.vscode/
+
+# QtCreator
+*.autosave
+
+# QtCreator CMake
+CMakeLists.txt.*
+
+# Others
+~$*
+.DS_Store
