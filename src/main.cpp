@@ -81,7 +81,7 @@ int main(int argc, char const* argv[])
 {
     auto const default_namespace = "resources";
     auto const default_name = "resources";
-    auto const default_output = "moc_resources.hpp";
+    auto const default_output = "resources.hpp";
 
     auto parser = argparse::ArgumentParser(argc, argv)
             .description("Tool to generate C++ files with binary resources")
