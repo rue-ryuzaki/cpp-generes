@@ -68,6 +68,21 @@ _replace(std::string s, char old, std::string const& value)
 }
 
 inline std::string
+_replace(std::string s,
+         std::function<bool(unsigned char)> func, std::string const& value)
+{
+    std::string res;
+    for (auto c : s) {
+        if (func(static_cast<unsigned char>(c))) {
+            res += value;
+        } else {
+            res += c;
+        }
+    }
+    return res;
+}
+
+inline std::string
 _to_upper(std::string s)
 {
     std::transform(std::begin(s), std::end(s), std::begin(s),
@@ -135,12 +150,12 @@ int main(int argc, char const* argv[])
           std::vector<std::pair<std::string, std::string> > >("resources", ':');
 
     auto define = detail::_file_name(output);
-    define = detail::_replace(define, '.', "_");
-    define = detail::_replace(define, ',', "_");
-    define = detail::_replace(define, ' ', "_");
-    define = detail::_replace(define, '-', "_");
-    define = detail::_replace(define, '\'', "");
-    define = detail::_replace(define, '\"', "");
+    define = detail::_replace(
+                define, [] (unsigned char c) { return std::iscntrl(c); }, "");
+    define = detail::_replace(
+                define, [] (unsigned char c) { return std::ispunct(c); }, "_");
+    define = detail::_replace(
+                define, [] (unsigned char c) { return std::isblank(c); }, "_");
     define = "_" + detail::_to_upper(space)
             + "_" + detail::_to_upper(define) + "_";
 
