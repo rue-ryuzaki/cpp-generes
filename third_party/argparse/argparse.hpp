@@ -1,7 +1,7 @@
 /*
 * MIT License
 *
-* Argument parser for C++11 (ArgumentParser v1.6.0)
+* Argument parser for C++11 (ArgumentParser v1.6.1)
 *
 * Copyright (c) 2021-2022 Golubchikov Mihail <https://github.com/rue-ryuzaki>
 *
@@ -29,7 +29,7 @@
 
 #define _ARGPARSE_VERSION_MAJOR 1
 #define _ARGPARSE_VERSION_MINOR 6
-#define _ARGPARSE_VERSION_PATCH 0
+#define _ARGPARSE_VERSION_PATCH 1
 
 #undef _ARGPARSE_CONSTEXPR
 #undef _ARGPARSE_EXPERIMENTAL_OPTIONAL
@@ -178,19 +178,6 @@ _ARGPARSE_EXPORT enum Action : std::uint16_t
 };
 
 /*!
- *  \brief Help formatter values
- *
- *  \enum HelpFormatter
- */
-_ARGPARSE_EXPORT enum HelpFormatter
-{
-    RawDescriptionHelpFormatter     = 0x00000001,
-    RawTextHelpFormatter            = 0x00000002,
-    ArgumentDefaultsHelpFormatter   = 0x00000004,
-    MetavarTypeHelpFormatter        = 0x00000008,
-};
-
-/*!
  *  \brief ArgumentError handler
  */
 _ARGPARSE_EXPORT class ArgumentError : public std::invalid_argument
@@ -283,6 +270,23 @@ public:
     TypeError(std::string const& error)
         : std::logic_error("TypeError: " + error)
     { }
+};
+
+//  Forward declaration
+class Argument;
+
+/*!
+ *  \brief _HelpFormatter class
+ */
+struct _HelpFormatter
+{
+    std::string (*_fill_text)(std::string const& text, std::size_t width,
+                              std::string const& indent);
+    std::string (*_get_default_metavar_for_optional)(Argument const* action);
+    std::string (*_get_default_metavar_for_positional)(Argument const* action);
+    std::string (*_get_help_string)(Argument const* action);
+    std::vector<std::string> (*_split_lines)(std::string const& text,
+                                             std::size_t width);
 };
 
 namespace detail {
@@ -628,6 +632,14 @@ _remove_quotes(std::string const& s)
     return _have_quotes(s) ? T(s).substr(1, s.size() - 2) : T(s);
 }
 
+inline bool
+_contains_substr(std::string const& str, std::string const& substr)
+{
+    //  C++23+
+    //  return str.contains(substr);
+    return str.find(substr) != std::string::npos;
+}
+
 inline std::string
 _replace(std::string s, char old, std::string const& value)
 {
@@ -857,13 +869,18 @@ _store_value_to(std::string& value, std::vector<std::string>& result,
 }
 
 inline std::vector<std::string>
-_split(std::string const& str, char delim, bool force = false)
+_split(std::string const& str, char delim,
+       bool force = false, bool add_delim = false)
 {
     std::vector<std::string> result;
     std::string value;
     for (auto c : str) {
         if (c == delim) {
             _store_value_to(value, result, force);
+            if (add_delim) {
+                value = std::string(1, delim);
+                _store_value_to(value, result, true);
+            }
         } else {
             value += c;
         }
@@ -1035,7 +1052,7 @@ _ignore_explicit(std::string const& arg, std::string const& value)
 
 inline std::string
 _format_output(std::string const& head, std::string const& body,
-               std::size_t interlayer, std::size_t indent, std::size_t limit,
+               std::size_t interlayer, std::size_t indent, std::size_t width,
                char delimiter = '\n')
 {
     std::vector<std::string> result;
@@ -1043,9 +1060,9 @@ _format_output(std::string const& head, std::string const& body,
     if (value.size() + interlayer > indent) {
         _store_value_to(value, result);
     }
-    auto _func = [indent, limit, &result, &value] (std::string const& str)
+    auto _func = [indent, width, &result, &value] (std::string const& str)
     {
-        if (value.size() > indent && value.size() + 1 + str.size() > limit) {
+        if (value.size() > indent && value.size() + 1 + str.size() > width) {
             _store_value_to(value, result);
         }
         if (value.size() < indent) {
@@ -1075,37 +1092,45 @@ _format_output(std::string const& head, std::string const& body,
 }
 
 inline std::string
-_help_formatter(HelpFormatter formatter, std::string const& help)
+_help_formatter(std::string const& head,
+                _HelpFormatter const& formatter,
+                std::string const& help,
+                std::size_t width,
+                std::string const& indent = std::string())
 {
-    if (help.empty()) {
-        return std::string();
-    }
-    if (formatter & RawTextHelpFormatter) {
-        return help;
-    }
-    auto lines = _split_whitespace(help);
-    return _vector_to_string(lines);
-}
+    std::size_t const interlayer = 2;
 
-inline std::string
-_raw_text_formatter(HelpFormatter formatter, std::string const& text)
-{
-    if (formatter & (RawDescriptionHelpFormatter | RawTextHelpFormatter)) {
-        return text;
+    std::vector<std::string> result;
+    std::string value = head;
+    if (value.size() + interlayer > indent.size()) {
+        _store_value_to(value, result);
     }
-    auto lines = _split_whitespace(text);
-    return _vector_to_string(lines);
+    if (!help.empty()) {
+        auto lines = formatter._split_lines(help, width - indent.size());
+        for (auto const& line : lines) {
+            if (value.size() < indent.size()) {
+                value.resize(indent.size(), _space);
+            }
+            value += line;
+            _store_value_to(value, result, true);
+        }
+    }
+    _store_value_to(value, result);
+    return _vector_to_string(result, "\n");
 }
 
 inline void
-_print_raw_text_formatter(HelpFormatter formatter, std::string const& text,
+_print_raw_text_formatter(_HelpFormatter const& formatter,
+                          std::string const& text,
+                          std::size_t width,
                           std::ostream& os,
                           std::string const& begin = "\n",
+                          std::string const& indent = std::string(),
                           std::string const& end = std::string())
 {
-    auto formatted_text = _raw_text_formatter(formatter, text);
-    if (!formatted_text.empty()) {
-        os << begin << formatted_text << end << std::endl;
+    if (!text.empty()) {
+        os << begin
+           << formatter._fill_text(text, width, indent) << end << std::endl;
     }
 }
 
@@ -1423,10 +1448,12 @@ _ARGPARSE_EXPORT enum _REMAINDER:uint8_t {} _ARGPARSE_INLINE_VARIABLE REMAINDER;
 _ARGPARSE_EXPORT class Argument
 {
     friend class _ArgumentData;
+    friend class _ArgumentDefaultsHelpFormatter;
     friend class ArgumentGroup;
     friend class ArgumentParser;
     friend class _BaseArgumentGroup;
     friend class _BaseParser;
+    friend class HelpFormatter;
     friend class MutuallyExclusiveGroup;
     friend class Namespace;
 
@@ -1773,7 +1800,9 @@ public:
         prepare_action(value);
         switch (value) {
             case Action::store_true :
-                m_default.clear();
+                if (!m_default.has_value()) {
+                    m_default.clear();
+                }
                 // fallthrough
             case Action::BooleanOptionalAction :
                 m_const.clear("1");
@@ -1783,7 +1812,9 @@ public:
                 m_choices.clear();
                 break;
             case Action::store_false :
-                m_default.clear("1");
+                if (!m_default.has_value()) {
+                    m_default.clear("1");
+                }
                 // fallthrough
             case Action::store_const :
             case Action::append_const :
@@ -2017,7 +2048,6 @@ public:
     inline Argument& default_value(std::string const& value)
     {
         m_default = detail::_trim_copy(value);
-        m_default_type.clear();
         return *this;
     }
 
@@ -2036,7 +2066,6 @@ public:
         std::stringstream ss;
         ss << value;
         m_default = ss.str();
-        m_default_type.clear();
         m_type_name = detail::Type::basic<T>();
         return *this;
     }
@@ -2052,6 +2081,11 @@ public:
     {
         if (value != argparse::SUPPRESS) {
             throw TypeError("got an unexpected keyword argument 'default'");
+        }
+        if (action() == Action::store_false) {
+            m_default.clear("1");
+        } else {
+            m_default.clear();
         }
         m_default_type = value;
         return *this;
@@ -2492,7 +2526,7 @@ private:
         }
     }
 
-    inline std::string usage(HelpFormatter formatter) const
+    inline std::string usage(_HelpFormatter const& formatter) const
     {
         std::string res;
         if (m_type == Optional) {
@@ -2513,7 +2547,7 @@ private:
         return res;
     }
 
-    inline std::string flags_to_string(HelpFormatter formatter) const
+    inline std::string flags_to_string(_HelpFormatter const& formatter) const
     {
         std::string res;
         if (m_type == Optional) {
@@ -2532,43 +2566,30 @@ private:
         return res;
     }
 
-    inline std::string
-    get_default(detail::Value<std::string> const& def) const
+    inline std::string get_default() const
     {
-        if (!def.has_value() && (action() & detail::_bool_action)) {
-            return detail::_bool_to_string(def());
+        if (!m_default.has_value() && (action() & detail::_bool_action)) {
+            return detail::_bool_to_string(m_default());
         } else {
-            return (def.has_value() || !def().empty()) ? def() : "None";
+            return (m_default.has_value() || !m_default().empty()) ? m_default()
+                                                                   : "None";
         }
     }
 
-    std::string print(bool suppress_default,
-                      detail::Value<std::string> const& argument_default,
-                      HelpFormatter formatter,
-                      std::size_t limit,
-                      std::size_t width) const
+    inline std::string print(_HelpFormatter const& formatter,
+                             std::size_t limit,
+                             std::size_t width) const
     {
-        std::string res = "  " + flags_to_string(formatter);
-        auto const& def = (m_default.has_value()
-                           || !argument_default.has_value())
-                ? m_default : argument_default;
-        auto formatted = detail::_help_formatter(
-          formatter, detail::_replace(help(), "%(default)s", get_default(def)));
-        if (!formatted.empty()) {
-            if ((m_type == Optional || (m_nargs & (ZERO_OR_ONE | ZERO_OR_MORE)))
-                    && (formatter & ArgumentDefaultsHelpFormatter)
-                    && !(action() & (Action::help | Action::version))) {
-                if (m_default_type != argparse::SUPPRESS
-                        && !(suppress_default && !def.has_value())) {
-                    formatted += " (default: " + get_default(def) + ")";
-                }
-            }
-        }
-        return detail::_format_output(res, formatted, 2, limit,
-                                      width, detail::_space);
+        return detail::_help_formatter(
+                            "  " + flags_to_string(formatter),
+                            formatter,
+                            detail::_replace(formatter._get_help_string(this),
+                                             "%(default)s", get_default()),
+                            width,
+                            std::string(limit, detail::_space));
     }
 
-    std::string get_nargs_suffix(HelpFormatter formatter) const
+    std::string get_nargs_suffix(_HelpFormatter const& formatter) const
     {
         auto names = get_argument_name(formatter);
         if (names.size() > 1
@@ -2608,19 +2629,17 @@ private:
     }
 
     inline std::vector<std::string>
-    get_argument_name(HelpFormatter formatter) const
+    get_argument_name(_HelpFormatter const& formatter) const
     {
-        if ((formatter & MetavarTypeHelpFormatter) && !type_name().empty()) {
-            return { type_name() };
-        }
         if (m_metavar.has_value()) {
             return m_metavar();
         }
         if (m_choices.has_value()) {
             return { "{" + detail::_vector_to_string(choices(), ",") + "}" };
         }
-        auto const& res = dest().empty() ? m_name : dest();
-        return { m_type == Optional ? detail::_to_upper(res) : res };
+        return { m_type == Optional
+                    ? formatter._get_default_metavar_for_optional(this)
+                    : formatter._get_default_metavar_for_positional(this) };
     }
 
     inline std::vector<std::string> const&
@@ -2648,6 +2667,11 @@ private:
             default :
                 return std::string();
         }
+    }
+
+    inline bool is_suppressed() const _ARGPARSE_NOEXCEPT
+    {
+        return m_default_type == argparse::SUPPRESS && !m_default.has_value();
     }
 
     inline bool operator ==(Argument const& rhs) const
@@ -2691,6 +2715,264 @@ private:
 };
 
 /*!
+ *  \brief Formatter for generating usage messages and argument help strings
+ */
+_ARGPARSE_EXPORT class HelpFormatter
+{
+public:
+    virtual ~HelpFormatter() = default;
+
+    virtual std::string
+    (*_fill_text() const) (std::string const&, std::size_t, std::string const&)
+    {
+        return _fill_text_s;
+    }
+
+    virtual std::string
+    (*_get_default_metavar_for_optional() const) (Argument const*)
+    {
+        return _get_default_metavar_for_optional_s;
+    }
+
+    virtual std::string
+    (*_get_default_metavar_for_positional() const) (Argument const*)
+    {
+        return _get_default_metavar_for_positional_s;
+    }
+
+    virtual std::string
+    (*_get_help_string() const) (Argument const*)
+    {
+        return _get_help_string_s;
+    }
+
+    virtual std::vector<std::string>
+    (*_split_lines() const) (std::string const&, std::size_t)
+    {
+        return _split_lines_s;
+    }
+
+protected:
+    static std::string
+    _fill_text_s(std::string const& text, std::size_t width,
+                 std::string const& indent)
+    {
+        std::vector<std::string> result;
+        std::string value;
+        auto lines = _split_lines_s(text, width - indent.size());
+        for (auto const& line : lines) {
+            if (value.size() < indent.size()) {
+                value.resize(indent.size(), detail::_space);
+            }
+            value += line;
+            detail::_store_value_to(value, result, true);
+        }
+        detail::_store_value_to(value, result);
+        return detail::_vector_to_string(result, "\n");
+    }
+
+    static std::string
+    _get_default_metavar_for_optional_s(Argument const* action)
+    {
+        return detail::_to_upper(action->dest().empty() ? action->m_name
+                                                        : action->dest());
+    }
+
+    static std::string
+    _get_default_metavar_for_positional_s(Argument const* action)
+    {
+        return action->dest().empty() ? action->m_name : action->dest();
+    }
+
+    static std::string
+    _get_help_string_s(Argument const* action)
+    {
+        return action->help();
+    }
+
+    static std::vector<std::string>
+    _split_lines_s(std::string const& text, std::size_t width)
+    {
+        std::string value;
+        std::vector<std::string> result;
+        auto _func = [width, &result, &value] (std::string const& str)
+        {
+            if (value.size() + 1 + str.size() > width) {
+                detail::_store_value_to(value, result);
+            }
+            if (!value.empty()) {
+                value += detail::_spaces;
+            }
+            value += str;
+        };
+        auto split_str = detail::_split_whitespace(text);
+        for (auto const& str : split_str) {
+            _func(str);
+        }
+        detail::_store_value_to(value, result);
+        return result;
+    }
+};
+
+/*!
+ *  \brief Help message formatter which retains any formatting in descriptions
+ */
+_ARGPARSE_EXPORT
+class _RawDescriptionHelpFormatter : public HelpFormatter
+{
+public:
+    virtual ~_RawDescriptionHelpFormatter() = default;
+
+    virtual std::string
+    (*_fill_text() const) (std::string const&, std::size_t,
+                           std::string const&) override
+    {
+        return _fill_text_s;
+    }
+
+protected:
+    static std::string
+    _fill_text_s(std::string const& text, std::size_t width,
+                 std::string const& indent)
+    {
+        std::vector<std::string> result;
+        std::string value;
+        auto lines = _split_lines_s(text, width - indent.size());
+        for (auto const& line : lines) {
+            if (value.size() < indent.size()) {
+                value.resize(indent.size(), detail::_space);
+            }
+            value += line;
+            detail::_store_value_to(value, result, true);
+        }
+        detail::_store_value_to(value, result);
+        return detail::_vector_to_string(result, "\n");
+    }
+
+    static std::vector<std::string>
+    _split_lines_s(std::string const& text, std::size_t width)
+    {
+        auto body = detail::_replace(text, '\t', " ");
+        std::string value;
+        std::vector<std::string> result;
+        auto _func = [width, &result, &value] (std::string const& str)
+        {
+            if (value.size() + 1 + str.size() > width) {
+                detail::_store_value_to(value, result);
+            }
+            value += str;
+        };
+        auto split_str = detail::_split(body, '\n', true);
+        for (auto const& str : split_str) {
+            if (str.empty()) {
+                detail::_store_value_to(value, result, true);
+            } else {
+                auto sub_split_str = detail::_split(str, detail::_space,
+                                                    true, true);
+                for (auto const& sub : sub_split_str) {
+                    _func(sub);
+                }
+                detail::_store_value_to(value, result);
+            }
+        }
+        detail::_store_value_to(value, result);
+        return result;
+    }
+} _ARGPARSE_INLINE_VARIABLE RawDescriptionHelpFormatter;
+
+/*!
+ *  \brief Help message formatter which retains formatting of all help text
+ */
+_ARGPARSE_EXPORT
+class _RawTextHelpFormatter : public _RawDescriptionHelpFormatter
+{
+public:
+    virtual ~_RawTextHelpFormatter() = default;
+
+    virtual std::vector<std::string>
+    (*_split_lines() const) (std::string const&, std::size_t) override
+    {
+        return _RawDescriptionHelpFormatter::_split_lines_s;
+    }
+} _ARGPARSE_INLINE_VARIABLE RawTextHelpFormatter;
+
+/*!
+ *  \brief Help message formatter which adds default values to argument help
+ */
+_ARGPARSE_EXPORT
+class _ArgumentDefaultsHelpFormatter : public HelpFormatter
+{
+public:
+    virtual ~_ArgumentDefaultsHelpFormatter() = default;
+
+    virtual std::string
+    (*_get_help_string() const) (Argument const*) override
+    {
+        return _get_help_string_s;
+    }
+
+protected:
+    static std::string
+    _get_help_string_s(Argument const* action)
+    {
+        auto help = action->help();
+        if (!help.empty()
+                && !detail::_contains_substr(help, "%(default)s")
+                && !action->is_suppressed()) {
+            if ((action->m_type == Argument::Optional
+                 || (action->m_nargs & (Argument::ZERO_OR_ONE
+                                        | Argument::ZERO_OR_MORE)))
+                    && !(action->action() & (Action::help | Action::version))) {
+                help += " (default: %(default)s)";
+            }
+        }
+        return help;
+    }
+} _ARGPARSE_INLINE_VARIABLE ArgumentDefaultsHelpFormatter;
+
+/*!
+ *  \brief Help message formatter which uses the argument 'type' as the default
+ *  metavar value (instead of the argument 'dest')
+ */
+_ARGPARSE_EXPORT
+class _MetavarTypeHelpFormatter : public HelpFormatter
+{
+public:
+    virtual ~_MetavarTypeHelpFormatter() = default;
+
+    virtual std::string
+    (*_get_default_metavar_for_optional() const) (Argument const*) override
+    {
+        return _get_default_metavar_for_optional_s;
+    }
+
+    virtual std::string
+    (*_get_default_metavar_for_positional() const) (Argument const*) override
+    {
+        return _get_default_metavar_for_positional_s;
+    }
+
+protected:
+    static std::string
+    _get_default_metavar_for_optional_s(Argument const* action)
+    {
+        if (!action->type_name().empty()) {
+            return action->type_name();
+        }
+        return HelpFormatter::_get_default_metavar_for_optional_s(action);
+    }
+
+    static std::string
+    _get_default_metavar_for_positional_s(Argument const* action)
+    {
+        if (!action->type_name().empty()) {
+            return action->type_name();
+        }
+        return HelpFormatter::_get_default_metavar_for_positional_s(action);
+    }
+} _ARGPARSE_INLINE_VARIABLE MetavarTypeHelpFormatter;
+
+/*!
  *  \brief Group class
  */
 class _Group
@@ -2731,12 +3013,10 @@ public:
     }
 
 protected:
-    virtual void limit_help_flags(HelpFormatter formatter,
+    virtual void limit_help_flags(_HelpFormatter const& formatter,
                                   std::size_t& limit)                 const = 0;
     virtual void print_help(std::ostream& os,
-                            bool show_default_value,
-                            detail::Value<std::string> const& argument_default,
-                            HelpFormatter formatter,
+                            _HelpFormatter const& formatter,
                             std::string const& prog,
                             std::size_t limit,
                             std::size_t width)                        const = 0;
@@ -3054,10 +3334,14 @@ class _BaseArgumentGroup
 protected:
     _BaseArgumentGroup(std::string& prefix_chars,
                        _ArgumentData& parent_data,
+                       detail::Value<std::string>& argument_default,
+                       detail::Value<_SUPPRESS>& argument_default_type,
                        bool is_mutex_group)
         : m_data(),
           m_prefix_chars(prefix_chars),
           m_parent_data(parent_data),
+          m_argument_default(argument_default),
+          m_argument_default_type(argument_default_type),
           m_is_mutex_group(is_mutex_group)
     { }
 
@@ -3073,6 +3357,8 @@ public:
         : m_data(orig.m_data),
           m_prefix_chars(orig.m_prefix_chars),
           m_parent_data(orig.m_parent_data),
+          m_argument_default(orig.m_argument_default),
+          m_argument_default_type(orig.m_argument_default_type),
           m_is_mutex_group(orig.m_is_mutex_group)
     { }
 
@@ -3091,10 +3377,12 @@ public:
     _BaseArgumentGroup& operator =(_BaseArgumentGroup const& rhs)
     {
         if (this != &rhs) {
-            m_data              = rhs.m_data;
-            m_prefix_chars      = rhs.m_prefix_chars;
-            m_parent_data       = rhs.m_parent_data;
-            m_is_mutex_group    = rhs.m_is_mutex_group;
+            m_data                  = rhs.m_data;
+            m_prefix_chars          = rhs.m_prefix_chars;
+            m_parent_data           = rhs.m_parent_data;
+            m_argument_default      = rhs.m_argument_default;
+            m_argument_default_type = rhs.m_argument_default_type;
+            m_is_mutex_group        = rhs.m_is_mutex_group;
         }
         return *this;
     }
@@ -3142,6 +3430,14 @@ protected:
                             m_data.m_arguments.back()->flags());
             }
         }
+        if (m_argument_default.has_value()
+                && !m_data.m_arguments.back()->m_default.has_value()
+                && !m_data.m_arguments.back()->m_default_type.has_value()) {
+            m_data.m_arguments.back()->default_value(m_argument_default());
+        }
+        if (m_argument_default_type.has_value()) {
+            m_data.m_arguments.back()->default_value(m_argument_default_type());
+        }
         m_parent_data.m_arguments.push_back(m_data.m_arguments.back());
         (optional ? m_data.m_optional : m_data.m_positional)
                 .push_back(std::make_pair(m_data.m_arguments.back(),
@@ -3154,6 +3450,8 @@ protected:
     _ArgumentData m_data;
     std::string& m_prefix_chars;
     _ArgumentData& m_parent_data;
+    detail::Value<std::string>& m_argument_default;
+    detail::Value<_SUPPRESS>& m_argument_default_type;
 
 private:
     bool m_is_mutex_group;
@@ -3170,19 +3468,25 @@ _ARGPARSE_EXPORT class ArgumentGroup : public _Group, public _BaseArgumentGroup
     ArgumentGroup(std::string const& title,
                   std::string const& description,
                   std::string& prefix_chars,
-                  _ArgumentData& parent_data)
+                  _ArgumentData& parent_data,
+                  detail::Value<std::string>& argument_default,
+                  detail::Value<_SUPPRESS>& argument_default_type)
         : _Group(title, description),
-          _BaseArgumentGroup(prefix_chars, parent_data, false)
+          _BaseArgumentGroup(prefix_chars, parent_data,
+                             argument_default, argument_default_type, false)
     { }
 
     static inline std::shared_ptr<ArgumentGroup>
     make_argument_group(std::string const& title,
                         std::string const& description,
                         std::string& prefix_chars,
-                        _ArgumentData& parent_data)
+                        _ArgumentData& parent_data,
+                        detail::Value<std::string>& argument_default,
+                        detail::Value<_SUPPRESS>& argument_default_type)
     {
         return std::make_shared<ArgumentGroup>
-                (ArgumentGroup(title, description, prefix_chars, parent_data));
+                (ArgumentGroup(title, description, prefix_chars, parent_data,
+                               argument_default, argument_default_type));
     }
 
 public:
@@ -3212,11 +3516,13 @@ public:
     ArgumentGroup& operator =(ArgumentGroup const& rhs)
     {
         if (this != &rhs) {
-            m_title         = rhs.m_title;
-            m_description   = rhs.m_description;
-            m_data          = rhs.m_data;
-            m_prefix_chars  = rhs.m_prefix_chars;
-            m_parent_data   = rhs.m_parent_data;
+            m_title                 = rhs.m_title;
+            m_description           = rhs.m_description;
+            m_data                  = rhs.m_data;
+            m_prefix_chars          = rhs.m_prefix_chars;
+            m_argument_default      = rhs.m_argument_default;
+            m_argument_default_type = rhs.m_argument_default_type;
+            m_parent_data           = rhs.m_parent_data;
         }
         return *this;
     }
@@ -3264,7 +3570,8 @@ public:
 
 private:
     inline void
-    limit_help_flags(HelpFormatter formatter, std::size_t& limit) const override
+    limit_help_flags(_HelpFormatter const& formatter,
+                     std::size_t& limit) const override
     {
         for (auto const& arg : m_data.m_arguments) {
             auto size = arg->flags_to_string(formatter).size();
@@ -3275,9 +3582,7 @@ private:
     }
 
     inline void print_help(std::ostream& os,
-                           bool suppress_default,
-                           detail::Value<std::string> const& argument_default,
-                           HelpFormatter formatter,
+                           _HelpFormatter const& formatter,
                            std::string const& prog,
                            std::size_t limit,
                            std::size_t width) const override
@@ -3289,13 +3594,13 @@ private:
             detail::_print_raw_text_formatter(
                         formatter,
                         detail::_replace(
-                            description(), "%(prog)s", prog), os, "\n  ");
+                            description(), "%(prog)s", prog),
+                        width, os, "\n", "  ");
             if (!m_data.m_arguments.empty()) {
                 os << std::endl;
             }
             for (auto const& arg : m_data.m_arguments) {
-                os << arg->print(suppress_default, argument_default,
-                                 formatter, limit, width) << std::endl;
+                os << arg->print(formatter, limit, width) << std::endl;
             }
         }
     }
@@ -3310,15 +3615,23 @@ _ARGPARSE_EXPORT class MutuallyExclusiveGroup : public _BaseArgumentGroup
     friend class _BaseParser;
 
     explicit
-    MutuallyExclusiveGroup(std::string& prefix_chars, _ArgumentData& parent)
-        : _BaseArgumentGroup(prefix_chars, parent, true),
+    MutuallyExclusiveGroup(std::string& prefix_chars,
+                           _ArgumentData& parent_data,
+                           detail::Value<std::string>& argument_default,
+                           detail::Value<_SUPPRESS>& argument_default_type)
+        : _BaseArgumentGroup(prefix_chars, parent_data,
+                             argument_default, argument_default_type, true),
           m_required(false)
     { }
 
     static inline MutuallyExclusiveGroup
-    make_mutex_group(std::string& prefix_chars, _ArgumentData& parent_data)
+    make_mutex_group(std::string& prefix_chars,
+                     _ArgumentData& parent_data,
+                     detail::Value<std::string>& argument_default,
+                     detail::Value<_SUPPRESS>& argument_default_type)
     {
-        return MutuallyExclusiveGroup(prefix_chars, parent_data);
+        return MutuallyExclusiveGroup(prefix_chars, parent_data,
+                                      argument_default, argument_default_type);
     }
 
 public:
@@ -3348,10 +3661,12 @@ public:
     MutuallyExclusiveGroup& operator =(MutuallyExclusiveGroup const& rhs)
     {
         if (this != &rhs) {
-            m_data          = rhs.m_data;
-            m_prefix_chars  = rhs.m_prefix_chars;
-            m_parent_data   = rhs.m_parent_data;
-            m_required      = rhs.m_required;
+            m_data                  = rhs.m_data;
+            m_prefix_chars          = rhs.m_prefix_chars;
+            m_parent_data           = rhs.m_parent_data;
+            m_argument_default      = rhs.m_argument_default;
+            m_argument_default_type = rhs.m_argument_default_type;
+            m_required              = rhs.m_required;
         }
         return *this;
     }
@@ -3395,7 +3710,7 @@ public:
     }
 
 private:
-    inline std::string usage(HelpFormatter formatter) const
+    inline std::string usage(_HelpFormatter const& formatter) const
     {
         std::string res;
         for (auto const& arg : m_data.m_arguments) {
@@ -5511,7 +5826,8 @@ public:
         }
 
         inline void
-        limit_help_flags(HelpFormatter, std::size_t& limit) const override
+        limit_help_flags(_HelpFormatter const&,
+                         std::size_t& limit) const override
         {
             auto size = flags_to_string().size();
             if (limit < size) {
@@ -5526,9 +5842,7 @@ public:
         }
 
         inline void print_help(std::ostream& os,
-                               bool,
-                               detail::Value<std::string> const&,
-                               HelpFormatter formatter,
+                               _HelpFormatter const& formatter,
                                std::string const& prog,
                                std::size_t limit,
                                std::size_t width) const override
@@ -5537,7 +5851,8 @@ public:
             detail::_print_raw_text_formatter(
                         formatter,
                         detail::_replace(
-                            description(), "%(prog)s", prog), os, "  ", "\n");
+                            description(), "%(prog)s", prog),
+                        width, os, "", "  ", "\n");
             os << print(formatter, limit, width) << std::endl;
         }
 
@@ -5561,26 +5876,31 @@ public:
             return "{" + res + "}";
         }
 
-        inline std::string print(HelpFormatter formatter,
+        inline std::string print(_HelpFormatter const& formatter,
                                  std::size_t limit, std::size_t width) const
         {
-            auto res = detail::_format_output(
+            auto res = detail::_help_formatter(
                         "  " + flags_to_string(),
-                        detail::_help_formatter(formatter, help()),
-                        2, limit, width, detail::_space);
+                        formatter,
+                        help(),
+                        width,
+                        std::string(limit, detail::_space));
             return std::accumulate(std::begin(m_parsers), std::end(m_parsers),
                                    res, [formatter, limit, width]
                                    (std::string const& str, pParser const& p)
             {
-                auto help = detail::_help_formatter(formatter, p->help());
-                if (!help.empty()) {
+                if (!p->help().empty()) {
                     auto name = "    " + p->m_name;
                     auto alias = detail::_vector_to_string(p->aliases(), ", ");
                     if (!alias.empty()) {
                         name += " (" + alias + ")";
                     }
-                    return str + "\n" + detail::_format_output(
-                                name, help, 2, limit, width, detail::_space);
+                    return str + "\n" + detail::_help_formatter(
+                                name,
+                                formatter,
+                                p->help(),
+                                width,
+                                std::string(limit, detail::_space));
                 }
                 return str;
             });
@@ -5598,6 +5918,41 @@ public:
 
 private:
     typedef std::pair<std::shared_ptr<Subparser>, std::size_t> SubparserInfo;
+
+    inline void
+    apply_formatter_class(HelpFormatter const& param, bool force = false)
+    {
+        HelpFormatter sample;
+        if (!m_formatter_class._fill_text
+                || force
+                || sample._fill_text() != param._fill_text()) {
+            m_formatter_class._fill_text = param._fill_text();
+        }
+        if (!m_formatter_class._get_default_metavar_for_optional
+                || force
+                || sample._get_default_metavar_for_optional()
+                    != param._get_default_metavar_for_optional()) {
+            m_formatter_class._get_default_metavar_for_optional
+                    =  param._get_default_metavar_for_optional();
+        }
+        if (!m_formatter_class._get_default_metavar_for_positional
+                || force
+                || sample._get_default_metavar_for_positional()
+                    != param._get_default_metavar_for_positional()) {
+            m_formatter_class._get_default_metavar_for_positional
+                    = param._get_default_metavar_for_positional();
+        }
+        if (!m_formatter_class._get_help_string
+                || force
+                || sample._get_help_string() != param._get_help_string()) {
+            m_formatter_class._get_help_string = param._get_help_string();
+        }
+        if (!m_formatter_class._split_lines
+                || force
+                || sample._split_lines() != param._split_lines()) {
+            m_formatter_class._split_lines = param._split_lines();
+        }
+    }
 
 public:
     /*!
@@ -5634,6 +5989,7 @@ public:
           m_handle(nullptr),
           m_parse_handle(nullptr)
     {
+        apply_formatter_class(HelpFormatter());
         this->prog(prog);
         m_data.update_help(true, m_prefix_chars);
     }
@@ -5885,9 +6241,9 @@ public:
      *  \return Current argument parser reference
      */
     inline ArgumentParser&
-    formatter_class(HelpFormatter param) _ARGPARSE_NOEXCEPT
+    formatter_class(HelpFormatter const& param)
     {
-        m_formatter_class = param;
+        apply_formatter_class(param, true);
         return *this;
     }
 
@@ -5901,7 +6257,7 @@ public:
      */
     template <class... Args>
     ArgumentParser&
-    formatter_class(HelpFormatter param, Args... args) _ARGPARSE_NOEXCEPT
+    formatter_class(HelpFormatter const& param, Args... args)
     {
         formatter_class(param);
         return add_formatter_class(args...);
@@ -5915,10 +6271,9 @@ public:
      *  \return Current argument parser reference
      */
     inline ArgumentParser&
-    add_formatter_class(HelpFormatter param) _ARGPARSE_NOEXCEPT
+    add_formatter_class(HelpFormatter const& param)
     {
-        m_formatter_class
-                = static_cast<HelpFormatter>(m_formatter_class | param);
+        apply_formatter_class(param);
         return *this;
     }
 
@@ -5932,7 +6287,7 @@ public:
      */
     template <class... Args>
     ArgumentParser&
-    add_formatter_class(HelpFormatter param, Args... args) _ARGPARSE_NOEXCEPT
+    add_formatter_class(HelpFormatter const& param, Args... args)
     {
         add_formatter_class(param);
         return add_formatter_class(args...);
@@ -5978,7 +6333,6 @@ public:
     inline ArgumentParser& argument_default(std::string const& param)
     {
         m_argument_default = detail::_trim_copy(param);
-        m_argument_default_type.clear();
         return *this;
     }
 
@@ -6266,8 +6620,9 @@ public:
     add_argument_group(std::string const& title = std::string(),
                        std::string const& description = std::string())
     {
-        auto group = ArgumentGroup::make_argument_group(title, description,
-                                                        m_prefix_chars, m_data);
+        auto group = ArgumentGroup::make_argument_group(
+                    title, description, m_prefix_chars, m_data,
+                    m_argument_default, m_argument_default_type);
         m_groups.push_back(group);
         return *group;
     }
@@ -6283,7 +6638,9 @@ public:
     add_mutually_exclusive_group(bool required = false)
     {
         m_mutex_groups.emplace_back(
-              MutuallyExclusiveGroup::make_mutex_group(m_prefix_chars, m_data));
+              MutuallyExclusiveGroup::make_mutex_group(
+                        m_prefix_chars, m_data,
+                        m_argument_default, m_argument_default_type));
         return m_mutex_groups.back().required(required);
     }
 
@@ -6367,31 +6724,24 @@ public:
                                [&dest] (pArgument const& arg)
         { return detail::_is_value_exists(dest, arg->m_flags); });
         if (ip != std::end(positional)) {
-            return default_argument_value(*(*ip))();
+            return (*ip)->m_default();
         }
-        bool suppress_default = m_argument_default_type == argparse::SUPPRESS;
-        auto _arg_suppressed = [this, suppress_default] (pArgument const& arg)
-        {
-            return arg->m_default_type == argparse::SUPPRESS
-                    || (suppress_default
-                        && !default_argument_value(*arg).has_value());
-        };
         for (auto const& arg : optional) {
             if (!arg->dest().empty()) {
                 if (arg->dest() == dest) {
-                    if (_arg_suppressed(arg)) {
+                    if (arg->is_suppressed()) {
                         return detail::_suppress;
                     }
-                    return default_argument_value(*arg)();
+                    return arg->m_default();
                 }
             } else {
                 for (auto const& flag : arg->m_flags) {
                     auto name = detail::_flag_name(flag);
                     if (flag == dest || name == dest) {
-                        if (_arg_suppressed(arg)) {
+                        if (arg->is_suppressed()) {
                             return detail::_suppress;
                         }
-                        return default_argument_value(*arg)();
+                        return arg->m_default();
                     }
                 }
             }
@@ -6641,9 +6991,11 @@ public:
             print_custom_usage(positional_all, optional_all,
                                m_mutex_groups, sub_info, prog(), os);
         }
+        std::size_t width = output_width();
         detail::_print_raw_text_formatter(
                     m_formatter_class,
-                    detail::_replace(description(), "%(prog)s", prog()), os);
+                    detail::_replace(description(), "%(prog)s", prog()),
+                    width, os);
         std::size_t size = 0;
         auto _update_size = [&size] (std::size_t value)
         {
@@ -6651,8 +7003,6 @@ public:
                 size = value;
             }
         };
-        std::size_t width = output_width();
-        bool suppress_default = m_argument_default_type == argparse::SUPPRESS;
         auto subparser = sub_info.first;
         bool sub_positional = is_subparser_positional(subparser);
         for (auto const& arg : positional) {
@@ -6675,9 +7025,7 @@ public:
                 print_subparser(sub_positional, sub_info, i,
                                 m_formatter_class, size, width, os);
                 os << detail::_replace(
-                          positional.at(i)->print(suppress_default,
-                                                  m_argument_default,
-                                                  m_formatter_class,
+                          positional.at(i)->print(m_formatter_class,
                                                   size, width),
                           "%(prog)s", prog()) << std::endl;
             }
@@ -6688,19 +7036,18 @@ public:
             os << "\noptions:\n";
             for (auto const& arg : optional) {
                 os << detail::_replace(
-                          arg->print(suppress_default, m_argument_default,
-                                     m_formatter_class, size, width),
+                          arg->print(m_formatter_class, size, width),
                           "%(prog)s", prog()) << std::endl;
             }
         }
         for (auto const& group : m_groups) {
-            print_group(group, subparser, sub_positional, suppress_default,
-                        m_argument_default, m_formatter_class, prog(), size,
-                        width, os);
+            print_group(group, subparser, sub_positional, m_formatter_class,
+                        prog(), size, width, os);
         }
         detail::_print_raw_text_formatter(
                     m_formatter_class,
-                    detail::_replace(epilog(), "%(prog)s", prog()), os);
+                    detail::_replace(epilog(), "%(prog)s", prog()),
+                    width, os);
     }
 
     /*!
@@ -6783,6 +7130,14 @@ private:
     inline void process_add_argument()
     {
         bool optional = m_data.m_arguments.back()->m_type == Argument::Optional;
+        if (m_argument_default.has_value()
+                && !m_data.m_arguments.back()->m_default.has_value()
+                && !m_data.m_arguments.back()->m_default_type.has_value()) {
+            m_data.m_arguments.back()->default_value(m_argument_default());
+        }
+        if (m_argument_default_type.has_value()) {
+            m_data.m_arguments.back()->default_value(m_argument_default_type());
+        }
         (optional ? m_data.m_optional : m_data.m_positional)
                 .push_back(std::make_pair(m_data.m_arguments.back(), false));
     }
@@ -7130,7 +7485,7 @@ private:
     inline void
     storage_store_default_value(Parsers& parsers, pArgument const& arg) const
     {
-        auto const& value = default_argument_value(*arg);
+        auto const& value = arg->m_default;
         if (value.has_value()) {
             parsers.front().storage.store_default_value(arg, value());
         }
@@ -7973,12 +8328,10 @@ private:
     inline void
     default_values_post_trigger(Namespace::Storage& storage) const
     {
-        bool suppress_default = m_argument_default_type == argparse::SUPPRESS;
         for (auto it = storage.begin(); it != storage.end(); ) {
             if (!it->second.exists()) {
-                auto const& value = default_argument_value(*(it->first));
-                if (it->first->m_default_type == argparse::SUPPRESS
-                        || (suppress_default && !value.has_value())) {
+                auto const& value = it->first->m_default;
+                if (it->first->is_suppressed()) {
                     it = storage.erase(it);
                     continue;
                 }
@@ -8025,14 +8378,6 @@ private:
             parsers.at(i).parser->parse_handle(
                         only_known, sub_storage, unrecognized_args);
         }
-    }
-
-    inline detail::Value<std::string> const&
-    default_argument_value(Argument const& arg) const _ARGPARSE_NOEXCEPT
-    {
-        return (arg.m_default.has_value()
-                || !m_argument_default.has_value()) ? arg.m_default
-                                                    : m_argument_default;
     }
 
     static bool
@@ -8168,7 +8513,7 @@ private:
 
     static void
     print_subparser(bool need_print, SubparserInfo const& subparser,
-                    std::size_t index, HelpFormatter formatter,
+                    std::size_t index, _HelpFormatter const& formatter,
                     std::size_t size, std::size_t width, std::ostream& os)
     {
         if (need_print && subparser.second == index) {
@@ -8178,16 +8523,14 @@ private:
 
     static void print_group(pGroup const& group,
                             std::shared_ptr<Subparser> const& subparser,
-                            bool is_positional, bool suppress_default,
-                            detail::Value<std::string> const& argument_default,
-                            HelpFormatter formatter, std::string const& prog,
-                            std::size_t size, std::size_t width,
-                            std::ostream& os)
+                            bool is_positional,
+                            _HelpFormatter const& formatter,
+                            std::string const& prog, std::size_t size,
+                            std::size_t width, std::ostream& os)
     {
         if ((subparser && (group != subparser || !is_positional))
                 || (!subparser && group != subparser)) {
-            group->print_help(os, suppress_default, argument_default,
-                              formatter, prog, size, width);
+            group->print_help(os, formatter, prog, size, width);
         }
     }
 
@@ -8225,7 +8568,7 @@ private:
     std::string m_epilog;
     std::string m_help;
     std::vector<std::string> m_aliases;
-    HelpFormatter m_formatter_class;
+    _HelpFormatter m_formatter_class;
     std::string m_prefix_chars;
     std::string m_fromfile_prefix_chars;
     detail::Value<std::string> m_argument_default;
