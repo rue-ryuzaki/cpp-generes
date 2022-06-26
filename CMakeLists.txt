@@ -10,6 +10,7 @@ endif()
 if (NOT CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD 11)
 endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(src)
 include_directories(third_party)
