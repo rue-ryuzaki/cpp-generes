@@ -3,7 +3,7 @@
 *
 * Tool to generate C++ files with binary resources (cpp-generes)
 *
-* Copyright (c) 2021-2022 Golubchikov Mihail <https://github.com/rue-ryuzaki>
+* Copyright (c) 2022 Golubchikov Mihail <https://github.com/rue-ryuzaki>
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
 * of this software and associated documentation files (the "Software"), to deal
