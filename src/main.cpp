@@ -194,7 +194,7 @@ int main(int argc, char const* argv[])
     if (!detail::_is_directory_exists(dir)) {
         auto res = detail::_make_directory(dir);
         if (res != 0) {
-            std::cout << "[FAIL] Can't create directory '" << dir
+            std::cerr << "[FAIL] Can't create directory '" << dir
                       << "' for output file '" << output << "'" << std::endl;
             return res;
         }
