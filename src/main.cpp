@@ -24,17 +24,19 @@
 * SOFTWARE.
 */
 
+#if __cplusplus >= 201703L  // C++17+
+#include <filesystem>
+#else
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#include <cstdlib>
+#endif  // C++17+
 
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
-
-#if __cplusplus >= 201703L  // C++17+
-#include <filesystem>
-#endif  // C++17+
 
 #include <argparse/argparse.hpp>
 
@@ -109,27 +111,28 @@ _to_upper(std::string s)
     return s;
 }
 
-inline int
-_run_command(std::string const& command)
-{
-    return system(command.c_str());
-}
-
-inline int
+inline bool
 _make_directory(std::string const& path)
 {
-    return _run_command("mkdir -p " + path);
+#if __cplusplus >= 201703L  // C++17+
+    std::filesystem::path dir(path.c_str());
+    return std::filesystem::create_directory(dir);
+#else
+    std::string command = "mkdir -p " + path;
+    return system(command.c_str()) == 0;
+#endif  // C++17+
 }
 
 inline bool
 _is_directory_exists(std::string const& path)
 {
+#if __cplusplus >= 201703L  // C++17+
+    std::filesystem::path dir(path.c_str());
+    return std::filesystem::is_directory(dir);
+#else
     struct stat info;
-    if (stat(path.c_str(), &info) != 0) {
-        return false;
-    } else {
-        return (info.st_mode & S_IFDIR);
-    }
+    return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
+#endif  // C++17+
 }
 }  // namespace detail
 
@@ -201,11 +204,10 @@ int main(int argc, char const* argv[])
 
     auto dir = detail::_directory_name(output);
     if (!dir.empty() && dir != "." && !detail::_is_directory_exists(dir)) {
-        auto res = detail::_make_directory(dir);
-        if (res != 0) {
+        if (!detail::_make_directory(dir)) {
             std::cerr << "[FAIL] Can't create directory '" << dir
                       << "' for output file '" << output << "'" << std::endl;
-            return res;
+            return 1;
         }
     }
 
