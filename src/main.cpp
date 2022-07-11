@@ -41,17 +41,6 @@
 #include <argparse/argparse.hpp>
 
 namespace detail {
-inline bool
-_ends_with(std::string const& s, std::string const& value)
-{
-#if __cplusplus >= 202002L  // C++20+
-    return s.ends_with(value);
-#else
-    return s.size() >= value.size()
-            && 0 == s.compare(s.size() - value.size(), value.size(), value);
-#endif  // C++20+
-}
-
 inline std::string
 _directory_name(std::string const& path)
 {
@@ -66,6 +55,17 @@ _directory_name(std::string const& path)
 #endif  // C++17+
 }
 
+inline bool
+_ends_with(std::string const& s, std::string const& value)
+{
+#if __cplusplus >= 202002L  // C++20+
+    return s.ends_with(value);
+#else
+    return s.size() >= value.size()
+            && 0 == s.compare(s.size() - value.size(), value.size(), value);
+#endif  // C++20+
+}
+
 inline std::string
 _file_name(std::string const& path)
 {
@@ -73,6 +73,30 @@ _file_name(std::string const& path)
     return std::filesystem::path(path.c_str()).filename().string();
 #else
     return path.substr(path.find_last_of("/\\") + 1);
+#endif  // C++17+
+}
+
+inline bool
+_is_directory_exists(std::string const& path)
+{
+#if __cplusplus >= 201703L  // C++17+
+    std::filesystem::path dir(path.c_str());
+    return std::filesystem::is_directory(dir);
+#else
+    struct stat info;
+    return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
+#endif  // C++17+
+}
+
+inline bool
+_make_directory(std::string const& path)
+{
+#if __cplusplus >= 201703L  // C++17+
+    std::filesystem::path dir(path.c_str());
+    return std::filesystem::create_directory(dir);
+#else
+    std::string command = "mkdir -p " + path;
+    return system(command.c_str()) == 0;
 #endif  // C++17+
 }
 
@@ -109,30 +133,6 @@ _to_upper(std::string s)
                    [] (unsigned char c)
     { return static_cast<char>(std::toupper(c)); });
     return s;
-}
-
-inline bool
-_make_directory(std::string const& path)
-{
-#if __cplusplus >= 201703L  // C++17+
-    std::filesystem::path dir(path.c_str());
-    return std::filesystem::create_directory(dir);
-#else
-    std::string command = "mkdir -p " + path;
-    return system(command.c_str()) == 0;
-#endif  // C++17+
-}
-
-inline bool
-_is_directory_exists(std::string const& path)
-{
-#if __cplusplus >= 201703L  // C++17+
-    std::filesystem::path dir(path.c_str());
-    return std::filesystem::is_directory(dir);
-#else
-    struct stat info;
-    return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
-#endif  // C++17+
 }
 }  // namespace detail
 
@@ -186,9 +186,9 @@ int main(int argc, char const* argv[])
             && !detail::_ends_with(output, ".hpp")) {
         output += ".hpp";
     }
-    auto space = args.get<std::string>("namespace");
-    if (space.empty()) {
-        space = default_namespace;
+    auto name_space = args.get<std::string>("namespace");
+    if (name_space.empty()) {
+        name_space = default_namespace;
     }
     auto vec = args.get<
           std::vector<std::pair<std::string, std::string> > >("resources", ':');
@@ -199,7 +199,7 @@ int main(int argc, char const* argv[])
     define = detail::_replace(
                 define, [] (unsigned char c) { return std::ispunct(c); }, "_");
     define = detail::_replace(define, ' ', "_");
-    define = "_" + detail::_to_upper(space)
+    define = "_" + detail::_to_upper(name_space)
             + "_" + detail::_to_upper(define) + "_";
 
     auto dir = detail::_directory_name(output);
@@ -227,7 +227,7 @@ int main(int argc, char const* argv[])
     file << "#include <vector>\n";
     file << "#include <unordered_map>\n";
     file << "\n";
-    file << "namespace " << space << " {\n";
+    file << "namespace " << name_space << " {\n";
     file << "std::unordered_map<std::string, std::vector<uint8_t> > "
             "static const " << name << " =\n";
     file << "{\n";
@@ -244,7 +244,7 @@ int main(int argc, char const* argv[])
         }
     }
     file << "};\n";
-    file << "}  // namespace " << space << "\n";
+    file << "}  // namespace " << name_space << "\n";
     if (guards == "define") {
         file << "\n";
         file << "#endif  // " + define + "\n";
