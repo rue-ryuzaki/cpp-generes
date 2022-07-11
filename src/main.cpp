@@ -53,7 +53,15 @@ _ends_with(std::string const& s, std::string const& value)
 inline std::string
 _directory_name(std::string const& path)
 {
-    return path.substr(0, path.find_last_of("/\\"));
+#if __cplusplus >= 201703L  // C++17+
+    return std::filesystem::path(path.c_str()).parent_path().string();
+#else
+    auto pos = path.find_last_of("/\\");
+    while (pos != std::string::npos) {
+        return path.substr(0, pos);
+    }
+    return std::string();
+#endif  // C++17+
 }
 
 inline std::string
@@ -192,7 +200,7 @@ int main(int argc, char const* argv[])
             + "_" + detail::_to_upper(define) + "_";
 
     auto dir = detail::_directory_name(output);
-    if (!detail::_is_directory_exists(dir)) {
+    if (!dir.empty() && dir != "." && !detail::_is_directory_exists(dir)) {
         auto res = detail::_make_directory(dir);
         if (res != 0) {
             std::cerr << "[FAIL] Can't create directory '" << dir
