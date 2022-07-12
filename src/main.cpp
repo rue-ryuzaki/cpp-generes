@@ -24,7 +24,7 @@
 * SOFTWARE.
 */
 
-#if __cplusplus >= 201703L  // C++17+
+#if __cplusplus >= 201703L
 #include <filesystem>
 #else
 #include <sys/types.h>
@@ -40,11 +40,13 @@
 
 #include <argparse/argparse.hpp>
 
+char constexpr version[] = "%(prog)s v0.1.0";
+
 namespace detail {
 inline std::string
 _directory_name(std::string const& path)
 {
-#if __cplusplus >= 201703L  // C++17+
+#if __cplusplus >= 201703L
     return std::filesystem::path(path.c_str()).parent_path().string();
 #else
     auto pos = path.find_last_of("/\\");
@@ -58,7 +60,7 @@ _directory_name(std::string const& path)
 inline bool
 _ends_with(std::string const& s, std::string const& value)
 {
-#if __cplusplus >= 202002L  // C++20+
+#if __cplusplus >= 202002L
     return s.ends_with(value);
 #else
     return s.size() >= value.size()
@@ -69,7 +71,7 @@ _ends_with(std::string const& s, std::string const& value)
 inline std::string
 _file_name(std::string const& path)
 {
-#if __cplusplus >= 201703L  // C++17+
+#if __cplusplus >= 201703L
     return std::filesystem::path(path.c_str()).filename().string();
 #else
     return path.substr(path.find_last_of("/\\") + 1);
@@ -79,7 +81,7 @@ _file_name(std::string const& path)
 inline bool
 _is_directory_exists(std::string const& path)
 {
-#if __cplusplus >= 201703L  // C++17+
+#if __cplusplus >= 201703L
     std::filesystem::path dir(path.c_str());
     return std::filesystem::is_directory(dir);
 #else
@@ -91,7 +93,7 @@ _is_directory_exists(std::string const& path)
 inline bool
 _make_directory(std::string const& path)
 {
-#if __cplusplus >= 201703L  // C++17+
+#if __cplusplus >= 201703L
     std::filesystem::path dir(path.c_str());
     return std::filesystem::create_directory(dir);
 #else
@@ -147,6 +149,9 @@ int main(int argc, char const* argv[])
             .epilog("by rue-ryuzaki (c) 2022")
             .fromfile_prefix_chars("@")
             .formatter_class(argparse::ArgumentDefaultsHelpFormatter);
+    parser.add_argument("--version")
+            .action("version")
+            .version(version);
     parser.add_argument("resources")
             .action("extend")
             .nargs("*")

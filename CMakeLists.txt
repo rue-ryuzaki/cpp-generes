@@ -12,10 +12,9 @@ if (NOT CMAKE_CXX_STANDARD)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include_directories(src)
 include_directories(third_party)
 
-file(GLOB_RECURSE PROJECT_SOURCES "src/*.cpp")
+file(GLOB_RECURSE PROJECT_SOURCES "src/*.c*")
 
 set(SRC_LIST ${PROJECT_SOURCES})
 
