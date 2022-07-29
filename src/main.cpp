@@ -233,8 +233,8 @@ int main(int argc, char const* argv[])
     file << "#include <unordered_map>\n";
     file << "\n";
     file << "namespace " << name_space << " {\n";
-    file << "std::unordered_map<std::string, std::vector<uint8_t> > "
-            "static const " << name << " =\n";
+    file << "static std::unordered_map<std::string, std::vector<uint8_t> > "
+            "const " << name << " =\n";
     file << "{\n";
     for (auto const& pair : vec) {
         std::ifstream in(pair.first, std::ios::binary);
