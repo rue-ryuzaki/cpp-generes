@@ -246,6 +246,9 @@ int main(int argc, char const* argv[])
                 file << uint32_t(uint8_t(buffer[i])) << ",";
             }
             file << " } },\n";
+        } else {
+            std::cout << "[FAIL] Can't open file '" << pair.first << "'"
+                      << std::endl;
         }
     }
     file << "};\n";
