@@ -50,7 +50,7 @@ _directory_name(std::string const& path)
     return std::filesystem::path(path.c_str()).parent_path().string();
 #else
     auto pos = path.find_last_of("/\\");
-    while (pos != std::string::npos) {
+    if (pos != std::string::npos) {
         return path.substr(0, pos);
     }
     return std::string();
