@@ -1,5 +1,6 @@
-project("cpp-generes")
 cmake_minimum_required(VERSION 3.2)
+
+project("cpp-generes")
 
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /EHsc")
@@ -12,10 +13,12 @@ if (NOT CMAKE_CXX_STANDARD)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include_directories(third_party)
+add_subdirectory(third_party/argparse)
 
 file(GLOB_RECURSE PROJECT_SOURCES "src/*.c*")
 
 set(SRC_LIST ${PROJECT_SOURCES})
 
 add_executable(${PROJECT_NAME} ${SRC_LIST})
+
+target_link_libraries(${PROJECT_NAME} argparse)
