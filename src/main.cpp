@@ -3,7 +3,7 @@
 *
 * Tool to generate C++ files with binary resources (cpp-generes)
 *
-* Copyright (c) 2022 Golubchikov Mihail <https://github.com/rue-ryuzaki>
+* Copyright (c) 2022-2023 Golubchikov Mihail <https://github.com/rue-ryuzaki>
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
 * of this software and associated documentation files (the "Software"), to deal
@@ -82,8 +82,8 @@ inline bool
 _is_directory_exists(std::string const& path)
 {
 #if __cplusplus >= 201703L
-    std::filesystem::path dir(path.c_str());
-    return std::filesystem::is_directory(dir);
+    std::filesystem::path p(path.c_str());
+    return std::filesystem::is_directory(p);
 #else
     struct stat info;
     return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
@@ -103,22 +103,22 @@ _make_directory(std::string const& path)
 }
 
 inline std::string
-_replace(std::string s, char old, std::string const& value)
+_replace(std::string str, char old, std::string const& value)
 {
-    auto pos = s.find(old);
+    auto pos = str.find(old);
     while (pos != std::string::npos) {
-        s.replace(pos, 1, value);
-        pos = s.find(old, pos + value.size());
+        str.replace(pos, 1, value);
+        pos = str.find(old, pos + value.size());
     }
-    return s;
+    return str;
 }
 
 inline std::string
-_replace(std::string s,
+_replace(std::string const& str,
          std::function<bool(unsigned char)> func, std::string const& value)
 {
     std::string res;
-    for (auto c : s) {
+    for (auto c : str) {
         if (func(static_cast<unsigned char>(c))) {
             res += value;
         } else {
@@ -129,12 +129,12 @@ _replace(std::string s,
 }
 
 inline std::string
-_to_upper(std::string s)
+_to_upper(std::string str)
 {
-    std::transform(std::begin(s), std::end(s), std::begin(s),
+    std::transform(str.begin(), str.end(), str.begin(),
                    [] (unsigned char c)
     { return static_cast<char>(std::toupper(c)); });
-    return s;
+    return str;
 }
 }  // namespace detail
 
@@ -146,7 +146,7 @@ int main(int argc, char const* argv[])
 
     auto parser = argparse::ArgumentParser(argc, argv)
             .description("Tool to generate C++ files with binary resources")
-            .epilog("by rue-ryuzaki (c) 2022")
+            .epilog("by rue-ryuzaki (c) 2022-2023")
             .fromfile_prefix_chars("@")
             .formatter_class(argparse::ArgumentDefaultsHelpFormatter);
     parser.add_argument("--version")
